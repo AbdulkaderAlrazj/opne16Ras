@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2015-2017 Franco Fichtner <franco@opnsense.org>
+# Copyright (c) 2015-2016 Franco Fichtner <franco@opnsense.org>
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,18 +31,14 @@ URL="https://github.com/opnsense/core/archive/stable"
 WORKPREFIX="/tmp/opnsense-bootstrap"
 FLAVOUR="OpenSSL"
 TYPE="opnsense"
-RELEASE="18.7"
+VERSION="16.7"
 
-DO_BARE=
 DO_INSECURE=
 DO_FACTORY=
 DO_YES=
 
-while getopts bfin:r:t:vy OPT; do
+while getopts fin:t:V:vy OPT; do
 	case ${OPT} in
-	b)
-		DO_BARE="-b"
-		;;
 	f)
 		DO_FACTORY="-f"
 		;;
@@ -52,27 +48,27 @@ while getopts bfin:r:t:vy OPT; do
 	n)
 		FLAVOUR=${OPTARG}
 		;;
-	r)
-		RELEASE=${OPTARG}
-		;;
 	t)
 		TYPE=${OPTARG}
 		;;
+	V)
+		VERSION=${OPTARG}
+		;;
 	v)
-		echo ${RELEASE}
+		echo ${VERSION}
 		exit 0
 		;;
 	y)
 		DO_YES="-y"
 		;;
 	*)
-		echo "Usage: man opnsense-bootstrap" >&2
+		echo "Usage: opnsense-bootstrap [-fvy]" >&2
+		echo "       [-n flavour] [-t type]" >&2
+		echo "       [-V version]" >&2
 		exit 1
 		;;
 	esac
 done
-
-shift $((${OPTIND} - 1))
 
 if [ "$(id -u)" != "0" ]; then
 	echo "Must be root." >&2
@@ -87,19 +83,24 @@ fi
 
 FBSDARCH=$(uname -p)
 if [ "${FBSDARCH}" != "i386" -a \
-    "${FBSDARCH}" != "amd64" ]; then
-	echo "Must be i386 or amd64" >&2
+    "${FBSDARCH}" != "amd64" -a \
+    "${FBSDARCH}" != "armv6" ]; then
+	echo "Must be i386 or amd64 or armv6" >&2
 	exit 1
 fi
 
-FBSDVER=$(uname -r | colrm 4)
-if [ "${FBSDVER}" != "11." ]; then
-	echo "Must be a FreeBSD 11 release." >&2
+
+FBSDVER=$(uname -r | colrm 13)
+if [ "${FBSDVER}" != "12.0-RELEASE" -a \
+    "${FBSDVER}" != "10.1-RELEASE" -a \
+    "${FBSDVER}" != "10.2-RELEASE" -a \
+    "${FBSDVER}" != "10.3-RELEASE" ]; then
+	echo "Must be a FreeBSD 10.x release." >&2
 	exit 1
 fi
 
 echo "This utility will attempt to turn this installation into the latest"
-echo "OPNsense ${RELEASE} release.  All packages will be deleted, the base"
+echo "OPNsense ${VERSION} release.  All packages will be deleted, the base"
 echo "system and kernel will be replaced, and if all went well the system"
 echo "will automatically reboot."
 
@@ -119,41 +120,37 @@ fi
 
 echo
 
+# point of no return: flush all localised repo info
 rm -rf /usr/local/etc/pkg
 
 export ASSUME_ALWAYS_YES=yes
 
 if [ -z "${DO_INSECURE}" ]; then
-	pkg bootstrap -f
+	pkg bootstrap
 	pkg install ca_root_nss
 fi
 
 WORKDIR=${WORKPREFIX}/${$}
 
 mkdir -p ${WORKDIR}
-fetch ${DO_INSECURE} -o ${WORKDIR}/core.tar.gz "${URL}/${RELEASE}.tar.gz"
+fetch ${DO_INSECURE} -o ${WORKDIR}/core.tar.gz "${URL}/${VERSION}.tar.gz"
 tar -C ${WORKDIR} -xf ${WORKDIR}/core.tar.gz
 
-if [ -z "${DO_BARE}" ]; then
-	if pkg -N; then
-		pkg unlock -a
-		pkg delete -fa
-	fi
-	rm -f /var/db/pkg/*
-fi
-
-make -C ${WORKDIR}/core-stable-${RELEASE} \
+make -C ${WORKDIR}/core-stable-${VERSION} \
     bootstrap DESTDIR= FLAVOUR=${FLAVOUR}
 
 rm -rf ${WORKPREFIX}/*
 
-if [ -z "${DO_BARE}" ]; then
-	if [ -n "${DO_FACTORY}" ]; then
-		rm -rf /conf/*
-	fi
-
-	pkg bootstrap
-	pkg install ${TYPE}
-	opnsense-update -bkf
-	reboot
+if pkg -N; then
+	pkg unlock -a
+	pkg delete -fa
 fi
+
+if [ -n "${DO_FACTORY}" ]; then
+	rm -rf /conf/*
+fi
+
+pkg bootstrap
+pkg install ${TYPE}
+opnsense-update -bkf
+/usr/local/etc/rc.reboot
