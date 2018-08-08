@@ -91,10 +91,7 @@ fi
 
 
 FBSDVER=$(uname -r | colrm 13)
-if [ "${FBSDVER}" != "12.0-RELEASE" -a \
-    "${FBSDVER}" != "10.1-RELEASE" -a \
-    "${FBSDVER}" != "10.2-RELEASE" -a \
-    "${FBSDVER}" != "10.3-RELEASE" ]; then
+if ["${FBSDVER}" != "12.3-RELEASE" ]; then
 	echo "Must be a FreeBSD 10.x release." >&2
 	exit 1
 fi
